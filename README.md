@@ -16,32 +16,32 @@ Read more about [Cloud Functions for Firebase](https://firebase.google.com/docs/
 1. Create your project in the Firebase Console.
 2. Enable the Google sign-in provider in the Authentication > SIGN-IN METHOD tab.
 3. You must have the Firebase CLI installed. If you don't have it, install it and then configure it with firebase login:
-```
-npm install firebase-functions@latest --save
+```bash
+$ npm install firebase-functions@latest --save
 ```
 
 4. Clone this repository and open the functions directory: 
-```
-git clone https://github.com/a-pasquale/yellow-heat-firebase-functions; cd functions
+```bash
+$ git clone https://github.com/a-pasquale/yellow-heat-firebase-functions; cd functions
 ```
 
 5. Install cloud functions dependencies: 
-```
-npm --prefix functions install
+```bash
+$ npm --prefix functions install
 ```
 
 6. On the command line select the Firebase project you have created.
-``` 
-firebase use --add
+```bash
+$ firebase use --add
 ```
 
 7. Configure Gmail SMTP transport for nodemailer:
-```
-firebase functions:config:set gmail.email='XXXXXXXXX@gmail.com'
-firebase functions:config:set gmail.password='XXXXXXXXXXX'
+```bash
+$ firebase functions:config:set gmail.email='XXXXXXXXX@gmail.com'
+$ firebase functions:config:set gmail.password='XXXXXXXXXXX'
 ```
 
 8. On the command line run firebase deploy to deploy the application.
-```
-firebase deploy --only functions
+```bash
+$ firebase deploy --only functions
 ```
