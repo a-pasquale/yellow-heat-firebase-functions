@@ -15,7 +15,6 @@ admin.initializeApp({
 // 2. https://accounts.google.com/DisplayUnlockCaptcha
 const gmailEmail = functions.config().gmail.email;
 const gmailPassword = functions.config().gmail.password;
-console.log("gmailPassword: ", gmailPassword);
 const mailTransport = nodemailer.createTransport({
   service: 'gmail',
   auth: {
@@ -45,36 +44,55 @@ exports.calcFuelUse = functions.database.ref('/{uid}/{heater}/data/{id}')
         const fuelReading = round(data.after.val().fuel, 4);
         console.log("Fuel Reading: ", fuelReading);
 
-        // Low Fuel Notifications
-        if (fuelReading < 0.5) {
-            admin.database().ref('/users/'+context.params.uid).once('value').then(
-                (snap) => {
-                    const user = snap.val();
-                    const mailOptions = {
-                        from: `Holyoke Codes <holyokecodes@gmail.com>`,
-                        to: user.email,
-                    };
-                
-                    // Send an alert notification.
-                    mailOptions.subject = `Alert: Fuel level low!`;
-                    mailOptions.text = `Hey ${user.name || ''}! Your fuel level is at ${fuelReading}.`;
-                    return mailTransport.sendMail(mailOptions).then(() => {
-                        return console.log('Alert email sent to:', user.email);
-                    });
-                }
-            )
-        }
         // Update heater summary statistics
         return admin.database().ref('/users/'+context.params.uid+'/'+context.params.heater).once('value').then(
-            (snap) => {
+            (heaterSnap) => {
+                const heater = heaterSnap.val();
+
+                admin.database().ref('/users/'+context.params.uid).once('value').then(
+                    (userSnap) => {
+                        const user = userSnap.val();
+
+                        // Low Fuel Notifications
+                        const notificationLevel = heater.notificationLevel/100.0;
+                        if (fuelReading < notificationLevel) {
+                            if (!heater.notified) {
+                                // Send an alert notification
+                                console.log("Fuel level is low!");
+                                const mailOptions = {
+                                    from: `Yellow Heat <${gmailEmail}>`,
+                                    to: user.email,
+                                    bcc: heater.notifyYellowHeat ? gmailEmail : ''
+                                };
+                                mailOptions.subject = `Alert: Fuel level low!`;
+                                mailOptions.html = `<p>Hey ${user.name || ''}!</p>`;
+                                mailOptions.html += `<p>Your fuel level is at ${fuelReading*100}%.</p>`;
+                                mailOptions.text = `Hey ${user.name || ''}! Your fuel level is at ${fuelReading*100}%. `;
+                                if (heater.notifyYellowHeat) { 
+                                    mailOptions.html += "<p>Yellow Heat has been notified and will contact you soon to arrange a delivery.</p>";
+                                    mailOptions.text += "Yellow Heat has been notified and will contact you soon to arrange a delivery.";
+                                };
+                                return mailTransport.sendMail(mailOptions).then(() => {
+                                    console.log('Alert email sent to:', user.email);
+                                    return heaterSnap.ref.child('notified').set(true);
+                                });
+                            }
+                        } else {
+                            // The tank is above notification level.
+                            // If there was a previouse notification,
+                            // reset the notified flag.
+                            if (heater.notified) heaterSnap.ref.child('notified').set(false);
+                        }
+                    }
+                )
                 // Calculate how much fuel used since last reading
-                const lastFuelReading = snap.val().lastFuelReading;
-                const tankSize = snap.val().tankSize;
+                const lastFuelReading = heater.lastFuelReading;
+                const tankSize = heater.tankSize;
                 const fuelUse = round((lastFuelReading - fuelReading) * tankSize, 2);
                 console.log("fuel use: ", fuelUse)
 
                 // Update total fuel use
-                let totalFuelUse = snap.val().totalFuelUse;
+                let totalFuelUse = heater.totalFuelUse;
                 console.log("Previous total fuel use: ", totalFuelUse)
                 if (fuelUse > 0) {
                     totalFuelUse += round(fuelUse, 1);
@@ -84,9 +102,9 @@ exports.calcFuelUse = functions.database.ref('/{uid}/{heater}/data/{id}')
                 }
 
                 // Update summary stats
-                snap.ref.child('lastFuelReading').set(fuelReading);
-                snap.ref.child('status').set(data.after.val().message);
-                return snap.ref.child('totalFuelUse').set(totalFuelUse);
+                heaterSnap.ref.child('lastFuelReading').set(fuelReading);
+                heaterSnap.ref.child('status').set(data.after.val().message);
+                return heaterSnap.ref.child('totalFuelUse').set(totalFuelUse);
             }
         )        
     })
