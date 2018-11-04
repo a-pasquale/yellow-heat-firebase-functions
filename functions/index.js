@@ -1,12 +1,12 @@
 const functions = require('firebase-functions');
 const nodemailer = require('nodemailer');
 const admin = require("firebase-admin");
-
+var serviceAccount = require("./cfg/yellow-heat-firebase-adminsdk-1oije-cb811d3f40.json");
 
 // Initialize the app with a null auth variable, limiting the server's access
 admin.initializeApp({
     databaseURL: "https://yellow-heat.firebaseio.com",
-    databaseAuthVariableOverride: null
+    credential: admin.credential.cert(serviceAccount),
 });
 
 // Configure the email transport using the default SMTP transport and a GMail account.
