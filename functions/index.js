@@ -1,7 +1,7 @@
 const functions = require('firebase-functions');
 const nodemailer = require('nodemailer');
 const admin = require("firebase-admin");
-var serviceAccount = require("./cfg/yellow-heat-firebase-adminsdk-1oije-cb811d3f40.json");
+const serviceAccount = require("./cfg/yellow-heat-firebase-adminsdk-1oije-cb811d3f40.json");
 
 // Initialize the app with a null auth variable, limiting the server's access
 admin.initializeApp({
@@ -29,9 +29,40 @@ exports.currentTemp = functions.database.ref('/{uid}/{heater}/temp/{id}')
         (data, context) => {
             const temp = round(data.after.val().temp, 1);
             console.log("Temp: ", temp);
-            return admin.database().ref('/users/'+context.params.uid+'/'+context.params.heater).once('value').then(
-                (snap) => {
-                    return snap.ref.child('temp').set(temp);
+
+            return admin.database().ref(`/users/${context.params.uid}`).once('value').then(
+                (userSnap) => {
+                    const user = userSnap.val();
+                    admin.database().ref(`/users/${context.params.uid}/${context.params.heater}`).once('value').then(
+                        (heaterSnap) => {
+                            const heater = heaterSnap.val();
+                             if (temp < heater.tempNotificationLevel) {
+                                if (!heater.tempNotified) {
+                                    // Send an alert notification
+                                    console.log("Temperature is low!");
+                                    const mailOptions = {
+                                        from: `Yellow Heat <${gmailEmail}>`,
+                                        to: user.email,
+                                        bcc: heater.notifyYellowHeat ? gmailEmail : ''
+                                    };
+                                    mailOptions.subject = `Alert: Low temperature!`;
+                                    mailOptions.html = `<p>Hey ${user.name || ''}!</p>`;
+                                    mailOptions.html += `<p>The temperature at ${heater.name} is ${temp} \u00B0F.</p>`;
+                                    mailOptions.text = `Hey ${user.name || ''}! The temperature at The temperature at ${heater.name} is ${temp} F.`;
+                                    return mailTransport.sendMail(mailOptions).then(() => {
+                                        console.log('Temperatur Alert email sent to:', user.email);
+                                        return heaterSnap.ref.child('tempNotified').set(true);
+                                    });
+                                }
+                            } else {
+                                // The temperature is above notification level.
+                                // If there was a previouse notification,
+                                // reset the notified flag.
+                                if (heater.tempNotified) heaterSnap.ref.child('tempNotified').set(false);
+                            }
+                        }
+                    )
+                    return userSnap.ref.child('temp').set(temp);
                 }
             )
         }
