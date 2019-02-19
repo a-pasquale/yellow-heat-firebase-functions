@@ -50,7 +50,7 @@ exports.currentTemp = functions.database.ref('/{uid}/{heater}/temp/{id}')
                                     mailOptions.html += `<p>The temperature at ${heater.name} is ${temp} \u00B0F.</p>`;
                                     mailOptions.text = `Hey ${user.name || ''}! The temperature at The temperature at ${heater.name} is ${temp} F.`;
                                     return mailTransport.sendMail(mailOptions).then(() => {
-                                        console.log('Temperatur Alert email sent to:', user.email);
+                                        console.log('Temperature alert email sent to:', user.email);
                                         return heaterSnap.ref.child('tempNotified').set(true);
                                     });
                                 }
@@ -60,9 +60,9 @@ exports.currentTemp = functions.database.ref('/{uid}/{heater}/temp/{id}')
                                 // reset the notified flag.
                                 if (heater.tempNotified) heaterSnap.ref.child('tempNotified').set(false);
                             }
+                            return heaterSnap.ref.child('temp').set(temp);
                         }
                     )
-                    return userSnap.ref.child('temp').set(temp);
                 }
             )
         }
