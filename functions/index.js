@@ -2,11 +2,15 @@ const functions = require('firebase-functions');
 const nodemailer = require('nodemailer');
 const admin = require("firebase-admin");
 const serviceAccount = require("./cfg/yellow-heat-firebase-adminsdk-1oije-cb811d3f40.json");
+const moment = require('moment');
+const os = require('os');
+const fs = require('fs');
+const path = require('path');
 
-// Initialize the app with a null auth variable, limiting the server's access
 admin.initializeApp({
     databaseURL: "https://yellow-heat.firebaseio.com",
     credential: admin.credential.cert(serviceAccount),
+    storageBucket: "yellow-heat.appspot.com"
 });
 
 // Configure the email transport using the default SMTP transport and a GMail account.
@@ -54,7 +58,7 @@ exports.currentTemp = functions.database.ref('/{uid}/{heater}/temp/{id}')
                                         return heaterSnap.ref.child('tempNotified').set(true);
                                     });
                                 }
-                            } else {
+                            } else if (temp > heater.tempNotificationLevel + 1) {
                                 // The temperature is above notification level.
                                 // If there was a previouse notification,
                                 // reset the notified flag.
@@ -108,7 +112,7 @@ exports.calcFuelUse = functions.database.ref('/{uid}/{heater}/data/{id}')
                                     return heaterSnap.ref.child('notified').set(true);
                                 });
                             }
-                        } else {
+                        } else if (fuelReading > notificationLevel + 1) {
                             // The tank is above notification level.
                             // If there was a previouse notification,
                             // reset the notified flag.
@@ -139,6 +143,62 @@ exports.calcFuelUse = functions.database.ref('/{uid}/{heater}/data/{id}')
             }
         )        
     })
+
+// Generate CSV report of heater data
+exports.csvReport = functions.https.onCall( async (data, context) => {
+    // Heater ID passed from the client.
+    const heater_id = data.id;
+    // Authentication / user information is automatically added to the request.
+    const uid = context.auth.uid;
+    const name = context.auth.token.name || null;
+    const email = context.auth.token.email || null;
+
+    // Get data for the heater
+    const dataSnap = await admin.database().ref(uid+'/'+heater_id+'/data').once('value')
+    const dataRows = dataSnap.val()
+
+    // Flatten and convert to CSV format
+    const csv = new Array()
+    Object.keys( dataRows ).forEach( key => {
+        if (dataRows[key].timestamp) {
+            const timestamp = moment.unix(dataRows[key].timestamp).format('MM/DD/YYYY h:mm a')
+            csv.push(timestamp + ", " + dataRows[key].fuel + ", " + dataRows[key].message + '\n')
+        }
+    })
+    csv.push(null)
+
+    // Write date to a temporary file
+    let fileName = heater_id + '_data.csv';
+    const tempFilePath = path.join(os.tmpdir(), fileName);
+    console.log( `Writing out to ${tempFilePath}` );
+    fs.writeFileSync(tempFilePath, csv.join("\n") );
+    
+    // Upload file to storage
+    const metadata = {
+        contentType: 'text/csv',
+    }
+    const storage = admin.storage();
+    await storage.bucket().upload(tempFilePath, { metadata })
+    console.log("file uploaded!")
+    fs.unlinkSync(tempFilePath)
+    
+    // Get the download url
+    const file = storage.bucket().file(fileName)
+    const url = await file.getSignedUrl({action: 'read', expires: moment().add(2, 'days').format("L") })
+    
+    // Email link to requesting account
+    const mailOptions = {
+        from: `Yellow Heat <${gmailEmail}>`,
+        to: email
+    };
+    mailOptions.subject = 'Your Yellow Heat data';
+    mailOptions.html = `<p>Hi ${name || ''}!</p>`;
+    mailOptions.html += `<p>Your heater data is ready! Download it <a href="${url}">here</a> and import it into your favorite spreadsheet.</p>`;
+    mailOptions.text = `Your heater data is ready! Download it from ${url} and import it into your favorite spreadsheet.`;
+    await mailTransport.sendMail(mailOptions)
+    console.log('Email sent to: ', email);
+    return { msg: "An email was sent to " + email + " with the link to your report." }
+})  
 
 function round(number, decimals) { 
     return +(Math.round(number + "e+" + decimals) + "e-" + decimals); 
